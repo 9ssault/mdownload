@@ -20,6 +20,12 @@ log = logging.getLogger("mdownload.downloader")
 ACTIVE = {"queued", "resolving", "running", "paused", "processing"}
 FINISHED = {"done", "error", "cancelled", "skipped"}
 
+# Liner can only see new rows by restarting, so a long batch gets a fresh
+# restart every few minutes instead of one at the end. Raising this keeps
+# playback alive longer; lowering it makes the list follow along faster.
+REFRESH_EVERY = 180.0
+REFRESH_IDLE = 5.0  # queue this quiet counts as drained: restart right away
+
 _YT_ID = re.compile(r"(?:v=|youtu\.be/|/shorts/|/embed/|/live/)([A-Za-z0-9_-]{11})")
 
 
@@ -150,7 +156,12 @@ class DownloadManager:
         self._yt = None
         self._yt_lock = threading.Lock()
         self._closing = False
-        self._liner_lock = threading.Lock()
+        self._liner_seq = 0        # bumped by every adopt
+        self._liner_done = 0       # seq the last restart covered
+        self._liner_dest = ""
+        self._liner_since = 0.0
+        self._liner_mark = 0.0     # when the last restart happened
+        self._liner_thread: threading.Thread | None = None
 
     # ---------------------------------------------------------------- pool
     def _yt_client(self):
@@ -402,17 +413,40 @@ class DownloadManager:
                 self._refresh_liner(job.dest or self.cfg.dest_dir, adopted)
 
     def _refresh_liner(self, dest: str, since: float) -> None:
-        """Restart Liner once the queue is empty so the new rows are listed."""
-        with self._liner_lock:
-            if self.active():
+        """Ask for a Liner restart so the rows just adopted get listed.
+
+        Liner reads ``library.json`` once per process, so its open window keeps
+        showing the library as it was at launch. The restart runs on a watcher
+        thread: workers never wait for it, and the downloads are in this process,
+        so a Liner restart does not touch the queue.
+        """
+        self._liner_dest, self._liner_since = dest, since
+        self._liner_seq += 1
+        t = self._liner_thread
+        if t is None or not t.is_alive():
+            self._liner_thread = threading.Thread(
+                target=self._liner_watch, name="liner-refresh", daemon=True)
+            self._liner_thread.start()
+
+    def _liner_watch(self) -> None:
+        while True:
+            time.sleep(2.0)
+            seq = self._liner_seq
+            if seq == self._liner_done:
                 return
-            root = liner.store(dest)
-            if root is None:
-                return
+            idle = (self.active() == 0
+                    and time.time() - self._liner_since > REFRESH_IDLE)
+            if not idle and time.time() < self._liner_mark + REFRESH_EVERY:
+                continue  # mid-batch: wait out the cooldown
+            root = liner.store(self._liner_dest)
             try:
-                liner.refresh_app(root, since)
+                if root is not None and liner.refresh_app(root, self._liner_since):
+                    self._liner_mark = time.time()
+                    log.info("liner: restarted for %d new track(s)",
+                             seq - self._liner_done)
             except Exception as exc:  # noqa: BLE001 - never fail a job over this
                 log.warning("liner refresh failed: %s", exc)
+            self._liner_done = seq
 
     def _record(self, job: Job) -> None:
         if job.status not in FINISHED or job.status == "skipped":

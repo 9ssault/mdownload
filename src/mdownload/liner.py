@@ -111,7 +111,8 @@ def refresh_app(root: str | Path, since: float, timeout: float = 20.0) -> bool:
     Liner loads the index once per process, so rows added underneath it stay
     invisible until the main process restarts. Nothing happens when Liner is
     not running (the next start reads the file anyway) or when it started after
-    ``since`` - that instance already has the rows.
+    ``since`` - that instance already has the rows. Callers repeat this during a
+    batch; the caller owns the cadence.
     """
     root = Path(root).expanduser()
     pid = app_pid(root)
@@ -119,15 +120,12 @@ def refresh_app(root: str | Path, since: float, timeout: float = 20.0) -> bool:
         return False
     if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
         return False  # a headless relaunch would take the instance lock
-    index = root / "library.json"
     try:
         before = _index(root)
         exe = os.readlink(f"/proc/{pid}/exe")
     except OSError:
         return False
 
-    backup = index.with_name(index.name + ".pre-restart")
-    shutil.copy2(index, backup)
     os.kill(pid, signal.SIGTERM)
     deadline = time.time() + timeout
     while time.time() < deadline and _alive(pid):
@@ -138,10 +136,9 @@ def refresh_app(root: str | Path, since: float, timeout: float = 20.0) -> bool:
     after = _index(root)
     kept = {r.get("id") for r in after}
     lost = [r for r in before if r.get("id") not in kept]
-    if lost:  # Liner rewrote the index from its cache on the way out
-        shutil.copy2(backup, index)
-        log.warning("liner: quit dropped %d records, index restored", len(lost))
-    backup.unlink(missing_ok=True)
+    if lost:  # a quit that saved a stale cache must not eat the new rows
+        _save(root, after + lost)
+        log.warning("liner: quit dropped %d records, merged back", len(lost))
 
     subprocess.Popen([exe], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=True,

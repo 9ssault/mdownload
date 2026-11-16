@@ -191,16 +191,27 @@ depends on how the track is named.
 
 Two rules come from Liner, not from mdownload:
 
-* **Restart Liner to see the new tracks.** It reads `library.json` once per
-  process and keeps it in memory. mdownload does this for you: when the queue
-  empties after an import, the running Liner is closed and started again so the
-  fresh rows are listed. The restart costs a couple of seconds of playback.
-  `app_pid` finds the process through Electron's `SingletonLock`, and the index
-  is copied aside and put back if quitting Liner shrinks it.
-* **Close Liner while you bulk-import.** A running Liner rewrites
-  `library.json` from its cached copy, which drops the records added underneath
-  it. The automatic restart keeps that window short, but do not add or remove
-  tracks in Liner while a batch is downloading.
+* **Liner has to restart to see the new tracks.** It reads `library.json` once
+  per process and keeps it in memory — closing the window and opening it again
+  is the only thing that reloads the list, and mdownload does that for you. The
+  restart runs on its own thread, so the queue keeps downloading through it, and
+  the downloads are in mdownload's process — a Liner restart never touches them.
+  A batch that never drains is refreshed every 3 minutes (`REFRESH_EVERY` in
+  `downloader.py`); when the queue goes quiet for a few seconds the last track is
+  flushed straight away. Each restart costs a couple of seconds of Liner's
+  playback. `app_pid` finds the process through Electron's `SingletonLock`.
+  Nothing happens when Liner is closed: the next start reads the file anyway.
+* **Do not remove tracks in Liner while a batch is importing.** A running Liner
+  writes `library.json` from its cached copy when you import or remove there, and
+  that drops records added underneath it. mdownload merges its rows back if a
+  restart sees the index shrink, but the two sides writing at once is a race.
+
+To reload Liner by hand at any moment, without touching the queue:
+
+```bash
+~/.venvs/download-music/bin/python -c "import time; from mdownload import liner; \
+from mdownload.config import load; print(liner.refresh_app(liner.store(load().dest_dir), time.time()))"
+```
 
 Any other destination folder is left alone — mdownload works identically on a
 machine without Liner.
