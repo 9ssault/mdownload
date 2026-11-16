@@ -1,0 +1,192 @@
+/* mdownload — dark theme, no external theme dependency */
+
+Screen {
+    background: $background;
+    color: $foreground;
+}
+
+#topbar {
+    dock: top;
+    height: 1;
+    padding: 0 1;
+    background: $panel;
+    color: $accent;
+    text-style: bold;
+}
+
+#main {
+    height: 1fr;
+}
+
+#options {
+    width: 42;
+    min-width: 32;
+    padding: 0 1 1 1;
+    border-right: solid $panel;
+}
+
+#options .sec {
+    margin-top: 1;
+    color: $accent;
+    text-style: bold;
+}
+
+#options .hint {
+    margin-top: 1;
+    color: $text-muted;
+}
+
+#options Input {
+    margin-bottom: 0;
+}
+
+#options Select {
+    margin-bottom: 0;
+}
+
+#options Switch {
+    margin-bottom: 0;
+}
+
+#dest-row {
+    height: auto;
+}
+
+#dest-row Button {
+    width: 1fr;
+    margin-right: 1;
+}
+
+.sw-row {
+    height: auto;
+}
+
+.sw-label {
+    width: 1fr;
+    padding-top: 1;
+}
+
+.hidden {
+    display: none;
+}
+
+#urlbatch {
+    height: 8;
+    border: solid $accent;
+}
+
+#right {
+    width: 1fr;
+}
+
+#queue {
+    height: 2fr;
+    border: solid $panel;
+}
+
+#log {
+    height: 1fr;
+    border: solid $panel;
+    background: $surface;
+}
+
+/* ------------------------------------------------------------ modals */
+HelpScreen, BrowseScreen, HistoryScreen, DestScreen, SettingsScreen, ConfirmQuit,
+DupesScreen {
+    align: center middle;
+    background: $background 60%;
+}
+
+#help-box {
+    width: 74;
+    max-width: 96%;
+    height: auto;
+    max-height: 90%;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#browse-box, #history-box, #dest-box, #confirm-box, #dupes-box {
+    width: 110;
+    max-width: 96%;
+    height: auto;
+    max-height: 90%;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#settings-box {
+    width: 90;
+    max-width: 96%;
+    height: 90%;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#browse-title, #history-title, #dest-title, #settings-title, #dupes-title {
+    color: $accent;
+    text-style: bold;
+    height: 1;
+}
+
+#browse-body {
+    height: 24;
+}
+
+#browse-cats {
+    width: 32;
+    border-right: solid $panel;
+}
+
+#browse-right {
+    width: 1fr;
+}
+
+#browse-status, #browse-help, #history-help, #dest-help, #settings-status,
+#dupes-status, #dupes-help {
+    height: 1;
+    color: $text-muted;
+}
+
+#browse-table, #history-table {
+    height: 1fr;
+    border: solid $panel;
+}
+
+#dupes-table {
+    height: 1fr;
+    min-height: 12;
+    border: solid $panel;
+}
+
+#dest-recent {
+    height: 8;
+    border: solid $panel;
+}
+
+.field-label {
+    height: 1;
+    color: $text-muted;
+}
+
+.field-input {
+    margin-bottom: 0;
+}
+
+#settings-buttons, #dest-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#settings-buttons Button, #dest-buttons Button {
+    width: 1fr;
+    margin-right: 1;
+}
+
+#confirm-box {
+    width: 60;
+    height: auto;
+}
