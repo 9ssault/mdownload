@@ -19,6 +19,8 @@ import logging
 import os
 import re
 import shutil
+import signal
+import socket
 import subprocess
 import threading
 import time
@@ -34,6 +36,7 @@ MIME = {
 }
 COVER_EXT = {"mjpeg": "jpg", "png": "png", "webp": "webp", "gif": "gif"}
 _TRACK_NO = re.compile(r"^\d{1,3}[\s._-]+")
+LOCK_NAME = "SingletonLock"  # Electron's instance lock, lives beside local-tracks
 
 _lock = threading.Lock()
 
@@ -87,6 +90,86 @@ def adopt_tree(src: str | Path, dest: str | Path) -> tuple[int, int, int]:
             else:
                 dupes += 1
     return added, dupes, failed
+
+
+# ------------------------------------------------------------- running app
+def app_pid(root: str | Path) -> int | None:
+    """PID of the running Liner main process, read from its instance lock."""
+    try:
+        target = os.readlink(Path(root).expanduser().parent / LOCK_NAME)
+        host, _, pid = target.rpartition("-")
+    except OSError:
+        return None
+    if host != socket.gethostname() or not pid.isdigit():
+        return None
+    return int(pid) if _alive(int(pid)) else None
+
+
+def refresh_app(root: str | Path, since: float, timeout: float = 20.0) -> bool:
+    """Restart a running Liner so it re-reads ``library.json``; True if it did.
+
+    Liner loads the index once per process, so rows added underneath it stay
+    invisible until the main process restarts. Nothing happens when Liner is
+    not running (the next start reads the file anyway) or when it started after
+    ``since`` - that instance already has the rows.
+    """
+    root = Path(root).expanduser()
+    pid = app_pid(root)
+    if pid is None or _started(pid) >= since:
+        return False
+    if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
+        return False  # a headless relaunch would take the instance lock
+    index = root / "library.json"
+    try:
+        before = _index(root)
+        exe = os.readlink(f"/proc/{pid}/exe")
+    except OSError:
+        return False
+
+    backup = index.with_name(index.name + ".pre-restart")
+    shutil.copy2(index, backup)
+    os.kill(pid, signal.SIGTERM)
+    deadline = time.time() + timeout
+    while time.time() < deadline and _alive(pid):
+        time.sleep(0.2)
+    if _alive(pid):
+        os.kill(pid, signal.SIGKILL)
+        time.sleep(0.5)
+    after = _index(root)
+    kept = {r.get("id") for r in after}
+    lost = [r for r in before if r.get("id") not in kept]
+    if lost:  # Liner rewrote the index from its cache on the way out
+        shutil.copy2(backup, index)
+        log.warning("liner: quit dropped %d records, index restored", len(lost))
+    backup.unlink(missing_ok=True)
+
+    subprocess.Popen([exe], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True,
+                     cwd=str(Path.home()))
+    log.info("liner: restarted so %d tracks show up", len(before))
+    return True
+
+
+# ------------------------------------------------------------------ internals
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _started(pid: int) -> float:
+    """Epoch seconds when the process started; 0.0 when it cannot be read."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        ticks = int(stat[stat.rindex(")") + 2:].split()[19])  # field 22
+        btime = next(int(line.split()[1]) for line in
+                     Path("/proc/stat").read_text().splitlines()
+                     if line.startswith("btime "))
+    except (OSError, ValueError, IndexError, StopIteration):
+        return 0.0
+    return btime + ticks / os.sysconf("SC_CLK_TCK")
 
 
 # ------------------------------------------------------------------ internals

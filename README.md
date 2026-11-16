@@ -191,11 +191,16 @@ depends on how the track is named.
 
 Two rules come from Liner, not from mdownload:
 
-* **Restart Liner after downloading.** It reads `library.json` once at startup
-  and caches it, so new tracks appear only after a restart.
+* **Restart Liner to see the new tracks.** It reads `library.json` once per
+  process and keeps it in memory. mdownload does this for you: when the queue
+  empties after an import, the running Liner is closed and started again so the
+  fresh rows are listed. The restart costs a couple of seconds of playback.
+  `app_pid` finds the process through Electron's `SingletonLock`, and the index
+  is copied aside and put back if quitting Liner shrinks it.
 * **Close Liner while you bulk-import.** A running Liner rewrites
   `library.json` from its cached copy, which drops the records added underneath
-  it.
+  it. The automatic restart keeps that window short, but do not add or remove
+  tracks in Liner while a batch is downloading.
 
 Any other destination folder is left alone — mdownload works identically on a
 machine without Liner.

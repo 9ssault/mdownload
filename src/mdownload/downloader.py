@@ -150,6 +150,7 @@ class DownloadManager:
         self._yt = None
         self._yt_lock = threading.Lock()
         self._closing = False
+        self._liner_lock = threading.Lock()
 
     # ---------------------------------------------------------------- pool
     def _yt_client(self):
@@ -346,6 +347,7 @@ class DownloadManager:
         job.started = time.time()
         lib = self.library(job.dest)
         force = bool(job.spec.get("force"))
+        adopted = 0.0
         try:
             url = job.url
             vid = youtube_id(url)
@@ -381,6 +383,7 @@ class DownloadManager:
             final = liner.adopt(job.filename, job.dest or self.cfg.dest_dir)
             if final is not None:
                 job.filename = str(final)
+                adopted = time.time()
             if vid:
                 lib.note_id(vid, job.filename)
             lib.add_file(job.filename)
@@ -395,6 +398,21 @@ class DownloadManager:
         finally:
             job.finished = time.time()
             self._record(job)
+            if adopted:
+                self._refresh_liner(job.dest or self.cfg.dest_dir, adopted)
+
+    def _refresh_liner(self, dest: str, since: float) -> None:
+        """Restart Liner once the queue is empty so the new rows are listed."""
+        with self._liner_lock:
+            if self.active():
+                return
+            root = liner.store(dest)
+            if root is None:
+                return
+            try:
+                liner.refresh_app(root, since)
+            except Exception as exc:  # noqa: BLE001 - never fail a job over this
+                log.warning("liner refresh failed: %s", exc)
 
     def _record(self, job: Job) -> None:
         if job.status not in FINISHED or job.status == "skipped":
