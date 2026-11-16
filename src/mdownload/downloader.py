@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import engine
+from . import engine, liner
 from .config import Config
 from .history import History
 from .library import Library, tokens
@@ -376,6 +376,11 @@ class DownloadManager:
                 ydl.download([url])
             job.status = "done"
             job.progress = 1.0
+            # a destination that is a Liner library gets the file filed under
+            # its content id plus an index record, or Liner never lists it
+            final = liner.adopt(job.filename, job.dest or self.cfg.dest_dir)
+            if final is not None:
+                job.filename = str(final)
             if vid:
                 lib.note_id(vid, job.filename)
             lib.add_file(job.filename)

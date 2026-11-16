@@ -170,6 +170,36 @@ A refused job shows as `skipped` with the reason (`already have it: <file>` or
 failure. Select it and press `r` to download it anyway — that one job bypasses
 both guards.
 
+### Downloading into Liner
+
+Liner (`liner-bin`) keeps its own local library, and a file
+dropped into its folder is **invisible** to it: the UI lists only what
+`library.json` names. When `dest_dir` *is* a Liner library (a folder holding
+`library.json` and `audio/`), mdownload files each finished track the way
+Liner's own importer does:
+
+* the audio moves to `audio/<sha1-of-content[:20]>.<ext>`;
+* its embedded art is extracted to `covers/<same id>.<ext>`;
+* a record — title, artist, album, `durationMs`, size, `addedAt` — is appended
+  to `library.json` (written atomically).
+
+Nothing else changes: the queue, the log and history still show the job, and
+`.mdownload-archive.txt` sits at the library root, so `skipped` still means
+"already have it". Identity here is the **content hash**, not the name: a
+byte-identical copy that arrives twice collapses into one record, and nothing
+depends on how the track is named.
+
+Two rules come from Liner, not from mdownload:
+
+* **Restart Liner after downloading.** It reads `library.json` once at startup
+  and caches it, so new tracks appear only after a restart.
+* **Close Liner while you bulk-import.** A running Liner rewrites
+  `library.json` from its cached copy, which drops the records added underneath
+  it.
+
+Any other destination folder is left alone — mdownload works identically on a
+machine without Liner.
+
 ### Cleaning up duplicates you already have
 
 `f12` opens the duplicate finder. It groups tracks two ways: the same normalised
@@ -182,6 +212,10 @@ Nothing is deleted on one keystroke: `d` marks the selected group's extra copies
 and the second `d` removes them; `D` does the whole library the same way; `r`
 cancels the arming or rescans, `o` opens the folder. The status line totals what
 would go.
+
+Inside a Liner library this finder is the wrong tool: deleting an `audio/<hash>.mp3`
+by hand leaves its `library.json` record pointing at nothing. Remove tracks from
+Liner's own UI, or drop the record too.
 
 ### Keys
 
@@ -280,7 +314,7 @@ because it holds the Spotify secret. CLI flags override the file.
 | `retries` | per-fragment and whole-file retries |
 | `proxy` | e.g. `socks5://127.0.0.1:1080` |
 | `concurrent` | simultaneous downloads (default 2) |
-| `dest_dir` / `recent_dirs` | output directory and its recent-path history |
+| `dest_dir` / `recent_dirs` | output directory and its recent-path history; a Liner library is filed into its store (see *Downloading into Liner*) |
 | `spotify_client_id` / `spotify_client_secret` / `spotify_redirect_uri` / `spotify_cache` | Spotify OAuth |
 | `ytmusic_auth` | ytmusicapi auth json |
 | `match_threshold` | 0–1 minimum score for a Spotify→YouTube match |
@@ -402,6 +436,7 @@ mdownload/
     screens.py    modals: help, Browse, History, destination, Settings, confirm
     downloader.py Job/Control, ThreadPoolExecutor, yt-dlp hooks, playlist expansion
     library.py    destination index, archive, duplicate finder
+    liner.py      Liner library adapter: content id, cover, library.json record
     sources.py    Spotify and YouTube Music library browsing
     config.py     TOML load/save, seeded from ~/.config/download-music
     history.py    SQLite history
